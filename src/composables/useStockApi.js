@@ -127,18 +127,49 @@ export async function fetchStockData(symbol, timeframe = '1mo') {
   return await fetchFromYahoo(symbol, timeframe)
 }
 
-export function searchStocks(query) {
+export async function searchStocks(query) {
   const q = query.toLowerCase().trim()
   if (!q) return []
+
   const results = []
+  const seen = new Set()
+
+  // 1. Local hot stocks (instant)
   for (const market of ['us', 'cn', 'hk']) {
     for (const stock of (hotStocks[market] || [])) {
       if (stock.sym.toLowerCase().includes(q) || stock.name.toLowerCase().includes(q)) {
-        results.push({ symbol: stock.sym, shortname: stock.name, longname: '' })
+        if (!seen.has(stock.sym)) {
+          results.push({ symbol: stock.sym, shortname: stock.name, longname: '' })
+          seen.add(stock.sym)
+        }
       }
     }
   }
-  return results.slice(0, 10)
+
+  // 2. Try QQ smartbox API for additional results
+  try {
+    const url = `https://smartbox.gtimg.cn/s3/?q=${encodeURIComponent(query)}&t=all&c=stock`
+    const resp = await fetch(url)
+    if (resp.ok) {
+      const text = await resp.text()
+      const json = JSON.parse(text.replace(/^var\s+\w+\s*=\s*/, '').replace(/;?\s*$/, ''))
+      for (const s of (json?.data?.stock || [])) {
+        const code = s.code || ''
+        let symbol = code
+        if (code.startsWith('sh')) symbol = code.replace('sh', '') + '.SS'
+        else if (code.startsWith('sz')) symbol = code.replace('sz', '') + '.SZ'
+        else if (code.startsWith('hk')) symbol = code.replace('hk', '').replace(/^0+/, '') + '.HK'
+        else if (code.startsWith('us')) symbol = code.replace('us', '').replace('.OQ', '')
+        symbol = symbol.toUpperCase()
+        if (!seen.has(symbol)) {
+          results.push({ symbol, shortname: s.name || '', longname: s.fullname || '' })
+          seen.add(symbol)
+        }
+      }
+    }
+  } catch { /* external search failed — use local results only */ }
+
+  return results.slice(0, 15)
 }
 
 export async function fetchPriceSnapshot(symbol) {
