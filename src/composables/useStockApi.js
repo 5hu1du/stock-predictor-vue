@@ -1,3 +1,5 @@
+import { QQ_BASE, YF_CHART_BASE, YF_SEARCH_BASE } from '../config/api.js'
+
 // Timeframe config: { label, ktype for QQ, range for Yahoo, limit }
 const tfConfig = {
   '1d':  { ktype: '5min', limit: 300 },
@@ -29,13 +31,13 @@ async function fetchFromQQ(symbol, timeframe) {
   let config = tfConfig[timeframe] || tfConfig['1mo']
 
   // First try the requested ktype
-  let resp = await fetch(`/api/qq/appstock/app/fqkline/get?param=${prefix},${config.ktype},,,${config.limit},qfq`)
+  let resp = await fetch(`${QQ_BASE}/appstock/app/fqkline/get?param=${prefix},${config.ktype},,,${config.limit},qfq`)
   if (!resp.ok) throw new Error(`QQ ${resp.status}`)
   let json = await resp.json()
 
   // If code != 0, the ktype might not be supported for this market. Fall back to daily.
   if (json.code !== 0) {
-    resp = await fetch(`/api/qq/appstock/app/fqkline/get?param=${prefix},day,,,200,qfq`)
+    resp = await fetch(`${QQ_BASE}/appstock/app/fqkline/get?param=${prefix},day,,,200,qfq`)
     if (!resp.ok) throw new Error(`QQ ${resp.status}`)
     json = await resp.json()
     if (json.code !== 0) throw new Error('QQ Finance: API error code ' + json.code)
@@ -90,7 +92,7 @@ const yfMap = { '1d': ['5m','1d'], '5d': ['15m','5d'], '1mo': ['1h','1mo'], '3mo
 async function fetchFromYahoo(symbol, timeframe) {
   const [interval, range] = yfMap[timeframe] || ['1d', '1mo']
   const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&includePrePost=false`
-  const resp = await fetch(`/api/yf-chart${path}`)
+  const resp = await fetch(`${YF_CHART_BASE}${path}`)
   if (!resp.ok) throw new Error(`Yahoo ${resp.status}`)
   const json = await resp.json()
   const result = json.chart?.result?.[0]
@@ -112,14 +114,14 @@ function processYahoo(result) {
 }
 
 export async function fetchStockData(symbol, timeframe = '1mo') {
-  try { return await fetchFromYahoo(symbol, timeframe) }
-  catch (e) { console.warn('Yahoo failed:', e.message) }
-  return await fetchFromQQ(symbol, timeframe)
+  try { return await fetchFromQQ(symbol, timeframe) }
+  catch (e) { console.warn('QQ failed:', e.message) }
+  return await fetchFromYahoo(symbol, timeframe)
 }
 
 export async function searchStocks(query) {
   try {
-    const resp = await fetch(`/api/yf-search/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8`)
+    const resp = await fetch(`${YF_SEARCH_BASE}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8`)
     if (resp.ok) { const json = await resp.json(); return json.quotes || [] }
   } catch {}
   return []
