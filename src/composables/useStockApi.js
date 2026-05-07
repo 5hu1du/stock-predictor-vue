@@ -27,15 +27,15 @@ function getQQPrefix(symbol) {
   if (s === '^HSTECH') return { prefix: 'hkHSTECH', market: 'hk' }
   if (s.startsWith('^') && s.endsWith('.SS')) return { prefix: 'sh' + s.replace(/(^\^|\.SS$)/g, ''), market: 'cn' }
   if (s.startsWith('^') && s.endsWith('.SZ')) return { prefix: 'sz' + s.replace(/(^\^|\.SZ$)/g, ''), market: 'cn' }
-  return { prefix: 'us' + s.replace('-', '.') + '.OQ', market: 'us' }
+  return { prefix: 'us' + s.replace('-', '.'), market: 'us' }
 }
 
 async function fetchFromQQ(symbol, timeframe) {
   const { prefix, market } = getQQPrefix(symbol)
   let config = tfConfig[timeframe] || tfConfig['1mo']
 
-  // HK stocks use a dedicated endpoint
-  const endpoint = market === 'hk' ? 'hkfqkline' : 'fqkline'
+  const endpointMap = { hk: 'hkfqkline', us: 'usfqkline' }
+  const endpoint = endpointMap[market] || 'fqkline'
 
   const buildUrl = (ktype, limit) =>
     `${QQ_BASE}/appstock/app/${endpoint}/get?param=${prefix},${ktype},,,${limit},qfq`
