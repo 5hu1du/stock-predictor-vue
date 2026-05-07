@@ -139,10 +139,24 @@ export async function fetchStockData(symbol, timeframe = '1mo') {
 
 export async function searchStocks(query) {
   try {
-    const resp = await fetch(`${YF_SEARCH_BASE}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8`)
-    if (resp.ok) { const json = await resp.json(); return json.quotes || [] }
-  } catch {}
-  return []
+    // QQ smartbox search — CORS-friendly
+    const url = `https://smartbox.gtimg.cn/s3/?q=${encodeURIComponent(query)}&t=all&c=stock`
+    const resp = await fetch(url)
+    if (!resp.ok) return []
+    const text = await resp.text()
+    // Response is JSONP: var smartbox={...}
+    const json = JSON.parse(text.replace(/^var\s+\w+\s*=\s*/, '').replace(/;?\s*$/, ''))
+    const items = json?.data?.stock || []
+    return items.map(s => {
+      const code = s.code || ''
+      let symbol = code
+      if (code.startsWith('sh')) symbol = code.replace('sh', '') + '.SS'
+      else if (code.startsWith('sz')) symbol = code.replace('sz', '') + '.SZ'
+      else if (code.startsWith('hk')) symbol = code.replace('hk', '').replace(/^0+/, '') + '.HK'
+      else if (code.startsWith('us')) symbol = code.replace('us', '').replace('.OQ', '')
+      return { symbol: symbol.toUpperCase(), shortname: s.name || '', longname: s.fullname || s.name || '' }
+    })
+  } catch { return [] }
 }
 
 export async function fetchPriceSnapshot(symbol) {
