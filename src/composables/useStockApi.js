@@ -23,7 +23,8 @@ function getQQPrefix(symbol) {
   if (s === '^HSTECH') return 'hkHSTECH'
   if (s.startsWith('^') && s.endsWith('.SS')) return 'sh' + s.replace(/(^\^|\.SS$)/g, '')
   if (s.startsWith('^') && s.endsWith('.SZ')) return 'sz' + s.replace(/(^\^|\.SZ$)/g, '')
-  return 'us' + s
+  // US stocks need .OQ suffix for QQ Finance
+  return 'us' + s.replace('-', '.') + '.OQ'
 }
 
 async function fetchFromQQ(symbol, timeframe) {
