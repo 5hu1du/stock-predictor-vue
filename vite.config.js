@@ -3,7 +3,15 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   base: '/stock-predictor-vue/',
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    {
+      name: 'strip-crossorigin',
+      transformIndexHtml(html) {
+        return html.replace(/ crossorigin/g, '')
+      },
+    },
+  ],
   server: {
     proxy: {
       '/api/yf-chart': {

@@ -1,4 +1,5 @@
 import { QQ_BASE, YF_CHART_BASE, YF_SEARCH_BASE } from '../config/api.js'
+import { hotStocks } from '../data/hotStocks.js'
 
 // Timeframe config: { label, ktype for QQ, range for Yahoo, limit }
 const tfConfig = {
@@ -137,26 +138,18 @@ export async function fetchStockData(symbol, timeframe = '1mo') {
   return await fetchFromYahoo(symbol, timeframe)
 }
 
-export async function searchStocks(query) {
-  try {
-    // QQ smartbox search — CORS-friendly
-    const url = `https://smartbox.gtimg.cn/s3/?q=${encodeURIComponent(query)}&t=all&c=stock`
-    const resp = await fetch(url)
-    if (!resp.ok) return []
-    const text = await resp.text()
-    // Response is JSONP: var smartbox={...}
-    const json = JSON.parse(text.replace(/^var\s+\w+\s*=\s*/, '').replace(/;?\s*$/, ''))
-    const items = json?.data?.stock || []
-    return items.map(s => {
-      const code = s.code || ''
-      let symbol = code
-      if (code.startsWith('sh')) symbol = code.replace('sh', '') + '.SS'
-      else if (code.startsWith('sz')) symbol = code.replace('sz', '') + '.SZ'
-      else if (code.startsWith('hk')) symbol = code.replace('hk', '').replace(/^0+/, '') + '.HK'
-      else if (code.startsWith('us')) symbol = code.replace('us', '').replace('.OQ', '')
-      return { symbol: symbol.toUpperCase(), shortname: s.name || '', longname: s.fullname || s.name || '' }
-    })
-  } catch { return [] }
+export function searchStocks(query) {
+  const q = query.toLowerCase().trim()
+  if (!q) return []
+  const results = []
+  for (const market of ['us', 'cn', 'hk']) {
+    for (const stock of (hotStocks[market] || [])) {
+      if (stock.sym.toLowerCase().includes(q) || stock.name.toLowerCase().includes(q)) {
+        results.push({ symbol: stock.sym, shortname: stock.name, longname: '' })
+      }
+    }
+  }
+  return results.slice(0, 10)
 }
 
 export async function fetchPriceSnapshot(symbol) {
