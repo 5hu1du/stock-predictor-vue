@@ -28,41 +28,30 @@ function getQQPrefix(symbol) {
   if (s === '^HSTECH') return { prefix: 'hkHSTECH', market: 'hk' }
   if (s.startsWith('^') && s.endsWith('.SS')) return { prefix: 'sh' + s.replace(/(^\^|\.SS$)/g, ''), market: 'cn' }
   if (s.startsWith('^') && s.endsWith('.SZ')) return { prefix: 'sz' + s.replace(/(^\^|\.SZ$)/g, ''), market: 'cn' }
-  return { prefix: 'us' + s.replace('-', '.'), market: 'us' }
+  return { prefix: 'us' + s.replace('-', '.') + '.OQ', market: 'us' }
 }
 
 async function fetchFromQQ(symbol, timeframe) {
   const { prefix, market } = getQQPrefix(symbol)
   let config = tfConfig[timeframe] || tfConfig['1mo']
 
-  // US stocks: try usfqkline first, fall back to fqkline
-  // HK stocks: use hkfqkline. A-shares: use fqkline.
-  const primaryEndpoint = { hk: 'hkfqkline', us: 'usfqkline' }[market] || 'fqkline'
-  const endpoints = [primaryEndpoint]
-  if (primaryEndpoint !== 'fqkline') endpoints.push('fqkline')
+  // HK stocks use hkfqkline; US & A-share stocks use fqkline
+  const endpoint = market === 'hk' ? 'hkfqkline' : 'fqkline'
 
-  let json = null, ok = false
-
-  for (const ep of endpoints) {
-    for (const [ktype, limit] of [[config.ktype, config.limit], ['day', 200]]) {
-      const url = `${QQ_BASE}/appstock/app/${ep}/get?param=${prefix},${ktype},,,${limit},qfq`
-      const resp = await fetch(url)
-      if (!resp.ok) continue
-      json = await resp.json()
-      if (json.code === 0) { config = { ktype, limit }; ok = true; break }
-    }
-    if (ok) break
+  // Try requested ktype first, fall back to daily
+  let json = null
+  for (const [ktype, limit] of [[config.ktype, config.limit], ['day', 200]]) {
+    const url = `${QQ_BASE}/appstock/app/${endpoint}/get?param=${prefix},${ktype},,,${limit},qfq`
+    const resp = await fetch(url)
+    if (!resp.ok) continue
+    json = await resp.json()
+    if (json.code === 0) { config = { ktype, limit }; break }
     json = null
   }
 
-  if (!ok || !json) throw new Error('QQ Finance: all endpoints failed')
+  if (!json) throw new Error('QQ Finance: request failed')
 
-  // The data key might differ from prefix (e.g., usAAPL vs usAAPL.OQ)
   let stockData = json.data?.[prefix]
-  if (!stockData) {
-    const alt = Object.keys(json.data || {}).find(k => k.toLowerCase() === prefix.toLowerCase())
-    if (alt) stockData = json.data[alt]
-  }
   if (!stockData) throw new Error('QQ data key mismatch: ' + (json.data ? Object.keys(json.data).join(', ') : 'no data'))
 
   let lines = null
