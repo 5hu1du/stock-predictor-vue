@@ -13,32 +13,43 @@ const tfConfig = {
 
 function getQQPrefix(symbol) {
   const s = symbol.toUpperCase()
-  if (s.endsWith('.SS')) return 'sh' + s.replace('.SS', '')
-  if (s.endsWith('.SZ')) return 'sz' + s.replace('.SZ', '')
-  if (s.endsWith('.HK')) return 'hk' + s.replace('.HK', '')
-  if (s === '^GSPC') return 'us.INX'
-  if (s === '^IXIC') return 'us.IXIC'
-  if (s === '^DJI') return 'us.DJI'
-  if (s === '^HSI') return 'hkHSI'
-  if (s === '^HSTECH') return 'hkHSTECH'
-  if (s.startsWith('^') && s.endsWith('.SS')) return 'sh' + s.replace(/(^\^|\.SS$)/g, '')
-  if (s.startsWith('^') && s.endsWith('.SZ')) return 'sz' + s.replace(/(^\^|\.SZ$)/g, '')
-  // US stocks need .OQ suffix for QQ Finance
-  return 'us' + s.replace('-', '.') + '.OQ'
+  if (s.endsWith('.SS')) return { prefix: 'sh' + s.replace('.SS', ''), market: 'cn' }
+  if (s.endsWith('.SZ')) return { prefix: 'sz' + s.replace('.SZ', ''), market: 'cn' }
+  if (s.endsWith('.HK')) {
+    // Pad HK code to 5 digits: 0700 → 00700
+    const code = s.replace('.HK', '')
+    return { prefix: 'hk' + code.padStart(5, '0'), market: 'hk' }
+  }
+  if (s === '^GSPC') return { prefix: 'us.INX', market: 'us' }
+  if (s === '^IXIC') return { prefix: 'us.IXIC', market: 'us' }
+  if (s === '^DJI') return { prefix: 'us.DJI', market: 'us' }
+  if (s === '^HSI') return { prefix: 'hkHSI', market: 'hk' }
+  if (s === '^HSTECH') return { prefix: 'hkHSTECH', market: 'hk' }
+  if (s.startsWith('^') && s.endsWith('.SS')) return { prefix: 'sh' + s.replace(/(^\^|\.SS$)/g, ''), market: 'cn' }
+  if (s.startsWith('^') && s.endsWith('.SZ')) return { prefix: 'sz' + s.replace(/(^\^|\.SZ$)/g, ''), market: 'cn' }
+  return { prefix: 'us' + s.replace('-', '.') + '.OQ', market: 'us' }
 }
 
 async function fetchFromQQ(symbol, timeframe) {
-  const prefix = getQQPrefix(symbol)
+  const { prefix, market } = getQQPrefix(symbol)
   let config = tfConfig[timeframe] || tfConfig['1mo']
 
-  // First try the requested ktype
-  let resp = await fetch(`${QQ_BASE}/appstock/app/fqkline/get?param=${prefix},${config.ktype},,,${config.limit},qfq`)
-  if (!resp.ok) throw new Error(`QQ ${resp.status}`)
-  let json = await resp.json()
+  // HK stocks use a dedicated endpoint
+  const endpoint = market === 'hk' ? 'hkfqkline' : 'fqkline'
 
-  // If code != 0, the ktype might not be supported for this market. Fall back to daily.
-  if (json.code !== 0) {
-    resp = await fetch(`${QQ_BASE}/appstock/app/fqkline/get?param=${prefix},day,,,200,qfq`)
+  const buildUrl = (ktype, limit) =>
+    `${QQ_BASE}/appstock/app/${endpoint}/get?param=${prefix},${ktype},,,${limit},qfq`
+
+  // Try the requested ktype; fall back to daily on any failure
+  let resp = await fetch(buildUrl(config.ktype, config.limit))
+  let json
+  if (resp.ok) {
+    json = await resp.json()
+    if (json.code === 0) { /* success */ }
+    else { resp = null } // signal to fall back
+  }
+  if (!resp || !resp.ok || (json && json.code !== 0)) {
+    resp = await fetch(buildUrl('day', 200))
     if (!resp.ok) throw new Error(`QQ ${resp.status}`)
     json = await resp.json()
     if (json.code !== 0) throw new Error('QQ Finance: API error code ' + json.code)
@@ -48,7 +59,7 @@ async function fetchFromQQ(symbol, timeframe) {
   const stockData = json.data?.[prefix]
   if (!stockData) throw new Error('QQ Finance: No data for ' + prefix)
 
-  // Try multiple key formats: qfq{ktype}, {ktype}, qt{ktype}
+  // HK stocks may use different data keys than A/US stocks
   let lines = null
   const keysToTry = [`qfq${config.ktype}`, config.ktype]
   for (const k of keysToTry) {
@@ -59,7 +70,6 @@ async function fetchFromQQ(symbol, timeframe) {
   const data = []
   let prevClose = null, totalVolume = 0
 
-  // QQ kline format: [date, open, close, high, low, volume]
   for (const line of lines) {
     const dateStr = line[0]
     const open = parseFloat(line[1]), close = parseFloat(line[2])
